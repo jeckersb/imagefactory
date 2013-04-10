@@ -18,6 +18,10 @@ class TestOVF(unittest.TestCase):
         ovf.ovf_name = 'lold'
         self.ovf = ovf
 
+    def tearDown(self):
+#        os.remove('/tmp/manifest')
+        pass
+
     def test_add_image(self, image='/var/lib/imagefactory/storage/2ada6d71-b835-4fa7-a914-c4188e2ce9fa.body'):
         self.ovf.add_image(image, [image])
         assert image in self.ovf.images  #is key in dict?
@@ -61,12 +65,46 @@ class TestOVF(unittest.TestCase):
         fake_img.close() #yes, this is not guaranteed to happen
         os.path.isfile('/tmp/manifest.mf')
 
+    def test__gen_file_elems_empty(self):
+        files = self.ovf._gen_file_elems()
+        self.assertEqual(files, [])
 
-    def test_save_as(self):
-        with NamedTemporaryFile(delete=False) as f:
-        #fname = 'test.ovf'
-            self.ovf.save_as(f.name)
-            print f.name
+    def test__gen_file_elems(self):
+        img, _ = self._prepare_fake_images()
+        self.test_add_image(img.name)
+
+        files = self.ovf._gen_file_elems()
+        img.close()
+        self.assertNotEqual(files, [])
+
+        for d, i in zip(files, self.ovf.images):
+          self.assertEqual(d.attrib['ovf:href'], i)
+          self.assertEqual(d.attrib['ovf:id'], i)
+          self.assertEqual(d.attrib['ovf:size'], str(self.ovf.sizes[img.name]))
+
+    def test__gen_disk_elems_empty(self):
+        files = self.ovf._gen_disk_elems()
+        self.assertEqual(files, [])
+
+    def test__gen_disk_elems(self):
+        img, _ = self._prepare_fake_images()
+        self.test_add_image(img.name)
+
+        disks = self.ovf._gen_disk_elems()
+        img.close()
+        self.assertNotEqual(disks, [])
+
+        for d, i in zip(disks, self.ovf.images):
+          print d.attrib.keys()
+          self.assertEqual(d.attrib['ovf:boot'], i)
+          self.assertEqual(d.attrib['ovf:format'], i)
+          self.assertEqual(d.attrib['ovf:volume-type:'], str(self.sizes[img]))
+
+#    def test_save_as(self):
+#        with NamedTemporaryFile(delete=False) as f:
+#        #fname = 'test.ovf'
+#            self.ovf.save_as(f.name)
+#            print f.name
 
 
 
