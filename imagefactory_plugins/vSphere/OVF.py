@@ -1,4 +1,20 @@
 #!/usr/bin/python
+#
+#   Copyright 2011 Red Hat, Inc.
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+
+
 import pdb
 import logging
 import stat
@@ -12,6 +28,7 @@ from tempfile import NamedTemporaryFile
 from tempfile import TemporaryFile
 from xml.etree import ElementTree
 
+from operator import add
 import re
 import hashlib
 
@@ -38,11 +55,9 @@ class OVF(object):
 
     self.images = {}
     self.sizes  = {}
-    self.log.debug("FUHACKO SME V OVF")
+    self.real_sizes  = {}
 
   def add_image(self, img, volume_parts):
-  #def add_image(self, img):
-    self.log.debug("LALALA %s -> '%s'" % (img, ', '.join(volume_parts)))
     st = os.stat(img)
     self.create_time = time.localtime()
     self.vol_size = st.st_size
@@ -51,13 +66,13 @@ class OVF(object):
       self.sizes[img].extend(
           map(lambda x: os.stat(x).st_size, volume_parts)
           )
+      self.real_sizes[img].extend(
+          map(lambda x: os.stat(x).st_blocks*512, volume_parts)
+          )
     else:
       self.images[img] = volume_parts
       self.sizes[img] = map(lambda x: os.stat(x).st_size, volume_parts)
-    self.log.debug(self.images)
-    self.log.debug(self.sizes)
-#    self.images[img] = map(str, range(volume_parts))
-
+      self.real_sizes[img] = map(lambda x: os.stat(x).st_blocks*512, volume_parts)
 
   def save_as(self, path):
     self.log.debug('GENERATING MANIFEST')
@@ -110,16 +125,56 @@ class OVF(object):
   def generate_manifest_data(self):
     shas = []
     mf = ''
-    self.log.debug("rebromet: '%s'" % str(self.images))
     for vols in self.images.keys():
-      self.log.debug("zblo vladne: '%s'" % str(vols))
       for img in self.images[vols]:
-        self.log.debug("TY KOKOT AHA '%s'" % img)
         with open(img, 'rb') as fin:
           digest = hashlib.sha256(fin.read()).hexdigest()
           mf += "SHA256(%s)= %s\n" % (img, digest)
 
     return mf
+
+  def _gen_disk_elems(self):
+    disks = []
+    for img in self.images:
+      etdisk = ElementTree.Element('Disk')
+      etdisk.set('ovf:diskId', str(img))
+      vol_size_str = ''#str((self.vol_size + (1024*1024*1024) - 1) / (1024*1024*1024))
+      etdisk.set('ovf:size', reduce(add, self.sizes[img]))
+      etdisk.set('ovf:vm_snapshot_id', '00000000-0000-0000-0000-000000000000')
+      etdisk.set('ovf:actual_size', reduce(add, self.real_sizes[img]))
+      etdisk.set('ovf:format', 'http://www.vmware.com/specifications/vmdk.html#sparse')
+      etdisk.set('ovf:parentRef', '')
+      # XXX ovf:vm_snapshot_id
+      etdisk.set('ovf:fileRef', str(img))
+      # XXX ovf:format ("usually url to the specification")
+      etdisk.set('ovf:volume-type', "Sparse")
+      etdisk.set('ovf:volume-format', "COW")
+#      if self.qcow_size:
+#          etdisk.set('ovf:volume-type', "Sparse")
+#          etdisk.set('ovf:volume-format', "COW")
+#      else:
+#          etdisk.set('ovf:volume-type', "Preallocated")
+#          etdisk.set('ovf:volume-format', "RAW")
+      ###########################################################################
+      etdisk.set('ovf:disk-interface', "VirtIO")
+      etdisk.set('ovf:disk-type', "System")
+      etdisk.set('ovf:boot', "true")
+      etdisk.set('ovf:wipe-after-delete', "false")
+      disks.append(etdisk)
+
+    return disks
+
+  def _gen_file_elems(self):
+    files = []
+    for img in self.images:
+      etfile = ElementTree.Element('File')
+      etfile.set('ovf:href', str(img)) #+'/'+str(self.vol_uuid))
+      etfile.set('ovf:id', str(img))
+      etfile.set('ovf:size', str(self.sizes[img]))
+      # TODO: Bulk this up a bit
+#      etfile.set('ovf:description', self.ovf_name)
+      files.append(etfile)
+    return files
 
   def generate_ovf_xml(self):
     etroot = ElementTree.Element('ovf:Envelope')
@@ -130,14 +185,9 @@ class OVF(object):
     etroot.set('ovf:version', "0.9")
 
     etref = ElementTree.Element('References')
-
-    etfile = ElementTree.Element('File')
-    etfile.set('ovf:href', str(self.img_uuid)+'/'+str(self.vol_uuid))
-    etfile.set('ovf:id', str(self.vol_uuid))
-    etfile.set('ovf:size', str(self.vol_size))
-    # TODO: Bulk this up a bit
-    etfile.set('ovf:description', self.ovf_name)
-    etref.append(etfile)
+    files = self._gen_file_elems()
+    for etfile in files:
+      etref.append(etfile)
 
     etroot.append(etref)
 
@@ -151,31 +201,9 @@ class OVF(object):
 
     etsec = ElementTree.Element('Section')
     etsec.set('xsi:type', "ovf:DiskSection_Type")
-
-    etdisk = ElementTree.Element('Disk')
-    etdisk.set('ovf:diskId', str(self.vol_uuid))
-    vol_size_str = ''#str((self.vol_size + (1024*1024*1024) - 1) / (1024*1024*1024))
-    etdisk.set('ovf:size', vol_size_str)
-    etdisk.set('ovf:vm_snapshot_id', '00000000-0000-0000-0000-000000000000')
-    etdisk.set('ovf:actual_size', vol_size_str)
-    etdisk.set('ovf:format', 'http://www.vmware.com/specifications/vmdk.html#sparse')
-    etdisk.set('ovf:parentRef', '')
-    # XXX ovf:vm_snapshot_id
-    etdisk.set('ovf:fileRef', str(self.img_uuid)+'/'+str(self.vol_uuid))
-    # XXX ovf:format ("usually url to the specification")
-    if self.qcow_size:
-        etdisk.set('ovf:volume-type', "Sparse")
-        etdisk.set('ovf:volume-format', "COW")
-    else:
-        etdisk.set('ovf:volume-type', "Preallocated")
-        etdisk.set('ovf:volume-format', "RAW")
-    ###########################################################################
-    etdisk.set('ovf:disk-interface', "VirtIO")
-    etdisk.set('ovf:disk-type', "System")
-    etdisk.set('ovf:boot', "true")
-    etdisk.set('ovf:wipe-after-delete', "false")
-    etsec.append(etdisk)
-
+    disks = self._gen_disk_elems()
+    for disk in disks:
+      etsec.append(disk)
     etroot.append(etsec)
 
     etcon = ElementTree.Element('Content')
