@@ -18,6 +18,8 @@ import logging
 import zope
 import oz.TDL
 import oz.GuestFactory
+import guestfs
+import libxml2
 from imgfac.ApplicationConfiguration import ApplicationConfiguration
 from imgfac.CloudDelegate import CloudDelegate
 from imgfac.PersistentImageManager import PersistentImageManager
