@@ -18,8 +18,10 @@ import logging
 import zope
 import oz.TDL
 import oz.GuestFactory
+import oz.ozutil
 import guestfs
 import libxml2
+import ConfigParser
 from imgfac.ApplicationConfiguration import ApplicationConfiguration
 from imgfac.CloudDelegate import CloudDelegate
 from imgfac.PersistentImageManager import PersistentImageManager
@@ -63,8 +65,30 @@ class IndirectionCloud(object):
         # This creates a new Oz object - replaces the auto-generated disk file location with
         # the copy of the utility image made above, and prepares an initial libvirt_xml string
         self._init_oz()
+        utility_image_tmp = self.app_config['imgdir'] + "/tmp-utility-image-" + str(builder.target_image.identifier)
         self.guest.diskimage = utility_image_tmp
+        if 'utility_cpus' in parameters:
+            self.guest.install_cpus = int(parameters['utility_cpus'])
+
         libvirt_xml = self.guest._generate_xml("hd", None)
+
+        # Modify the libvirt_xml used with Oz to contain a reference to a second "working space" disk image
+        working_space_image = self.app_config['imgdir'] + "/working-space-image-" + str(builder.target_image.identifier)
+        input_doc = libxml2.parseDoc(libvirt_xml)
+        devices = input_doc.xpathEval("/domain/devices")[0]
+        working_space = devices.newChild(None, "disk", None)
+        working_space.setProp("type", "file")
+        working_space.setProp("device", "disk")
+        source = working_space.newChild(None, "source", None)
+        source.setProp("file", working_space_image)
+        target = working_space.newChild(None, "target", None)
+        # TODO: Is vdb always safe?
+        target.setProp("dev", "vdb")
+        target.setProp("bus", self.guest.disk_bus)
+        # Done - replace original libvirt_xml with this
+        libvirt_xml = input_doc.serialize(None, 1)
+
+        self.log.debug("Updated domain XML with working space image:\n%s" % (libvirt_xml))
 
         # We expect to find a partial TDL document in this parameter - this is what drives the
         # tasks performed by the utility image
@@ -74,7 +98,6 @@ class IndirectionCloud(object):
             self.log.info('No additional repos, packages, files or commands specified for utility tasks')
 
         # Make a copy of the utlity image - this will be modified and then discarded
-        utility_image_tmp = self.app_config['imgdir'] + "/tmp-utility-image-" + str(builder.target_image.identifier)
         self.log.debug("Creating temporary working copy of utlity image (%s) as (%s)" % (self.active_image.data, utility_image_tmp))
         oz.ozutil.copyfile_sparse(self.active_image.data, utility_image_tmp)
 
@@ -82,23 +105,10 @@ class IndirectionCloud(object):
         # Hardcode at 30G
         # TODO: Make configurable
         # Make it, format it, copy in the base_image 
-        working_space_image = self.app_config['imgdir'] + "/working-space-image-" + str(builder.target_image.identifier)
         self.create_ext2_image(working_space_image)
         # Here we finally involve the actual Base Image content - it is made available for the utlity image to modify
         self.copy_content_to_image(builder.base_image.data, working_space_image)
 
-        input_doc = libxml2.parseDoc(libvirt_xml)
-        devices = input_doc.xpathEval("/domain/devices")
-        working_space = devices.newChild(None, "disk", None)
-        working_space.setProp("type", "file")
-        working_space.setProp("device", "disk")
-        source = working_space.newChild(None, "source", None)
-        source.setProp("file", working_space_image)
-        target = working_space.newChild(None, "target", None)
-        # TODO: Is vdb always safe?
-        target.setProp("dev", "vdb")
-
-        libvirt_xml = input_doc.serialize(None, 1)
 
         # Run all commands, repo injection, etc specified
         try:
@@ -117,19 +127,17 @@ class IndirectionCloud(object):
 
 
     def oz_refresh_customizations(self, partial_tdl):
-        # This takes our already created and well formed guest object, blanks the existing
-        # customizations and then attempts to add in any additional customizations found in
-        # partial_tdl
-        # partial_tdl need not contain the <os> section and if it does it will be ignored
-        # NOTE: The files, packages and commands elements of the original TDL are already blank
-
+        # This takes our already created and well formed TDL object with already blank customizations
+        # and attempts to add in any additional customizations found in partial_tdl
+        # partial_tdl need not contain the <os>, <name> or <description> sections
+        # if it does they will be ignored
         # TODO: Submit an Oz patch to make this shorter or a utility function within the TDL class
 
         doc = libxml2.parseDoc(partial_tdl)
-        self.guest.doc = doc 
+        self.tdlobj.doc = doc 
 
         packageslist = doc.xpathEval('/template/packages/package')
-        guest._add_packages(packageslist)
+        self.tdlobj._add_packages(packageslist)
 
         for afile in doc.xpathEval('/template/files/file'):
             name = afile.prop('name')
@@ -144,16 +152,16 @@ class IndirectionCloud(object):
                 self.files[name] = content
             elif contenttype == 'base64':
                 if len(content) == 0:
-                    self.guest.files[name] = ""
+                    self.tdlobj.files[name] = ""
                 else:
-                    self.guest.files[name] = base64.b64decode(content)
+                    self.tdlobj.files[name] = base64.b64decode(content)
             else:
                 raise Exception("File type for %s must be 'raw' or 'base64'" % (name))
 
-        repositorieslist = self.doc.xpathEval('/template/repositories/repository')
-        guest._add_repositories(repositorieslist)
+        repositorieslist = doc.xpathEval('/template/repositories/repository')
+        self.tdlobj._add_repositories(repositorieslist)
 
-        guest.commands = self.guest._parse_commands()
+        self.tdlobj.commands = self.tdlobj._parse_commands()
 
 
     def _init_oz(self):
@@ -209,7 +217,7 @@ class IndirectionCloud(object):
         g.sync()
 
     def copy_content_from_image(self, filename, target_image, destination_file):
-        self.log.debug("Copying file (%s) out of disk image (%s) into " % (filename, target_image))
+        self.log.debug("Copying file (%s) out of disk image (%s) into (%s)" % (filename, target_image, destination_file))
         g = guestfs.GuestFS()
         g.add_drive(target_image)
         g.launch()
