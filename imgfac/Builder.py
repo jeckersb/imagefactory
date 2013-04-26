@@ -26,6 +26,7 @@ from PersistentImageManager import PersistentImageManager
 from BaseImage import BaseImage
 from TargetImage import TargetImage
 from ProviderImage import ProviderImage
+from SlaveImage import SlaveImage
 from ImageFactoryException import ImageFactoryException
 from CallbackWorker import CallbackWorker
 from time import sleep
@@ -163,7 +164,20 @@ class Builder(object):
         self.target_image.template = template
         if parameters:
             self.target_image.parameters = parameters
-        self.pim.add_image(self.target_image)        
+        self.pim.add_image(self.target_image)
+
+        # create/copy slave images
+        bs_img = self.pim.image_with_id(image_id)
+        bs_slaves = map(self.pim.image_with_id, bs_img.slaves)
+        slaves = []
+        for s in bs_slaves:
+            slv = SlaveImage()
+            slv.parameters = parameters
+            slaves.append(slv)
+            self.pim.add_image(slv)
+        self.target_image.slaves = map(lambda x: x.identifier, slaves)
+        self.log.debug("CUSTOMIZE_FOR_TGT SLAVES='%s'" % (slaves))
+
         if parameters and ('callbacks' in parameters):
             # This ensures we have workers in place before any potential state changes
             self._init_callback_workers(self.target_image, parameters['callbacks'], self._target_image_cbws)
@@ -279,6 +293,19 @@ class Builder(object):
         self.provider_image.target_image_id = image_id
         self.provider_image.template = template
         self.pim.add_image(self.provider_image)
+
+        # create/copy slave images
+        bs_img = self.pim.image_with_id(image_id)
+        bs_slaves = map(self.pim.image_with_id, bs_img.slaves)
+        slaves = []
+        for s in bs_slaves:
+            slv = SlaveImage()
+            slv.parameters = parameters
+            slaves.append(slv)
+            self.pim.add_image(slv)
+        self.provider_image.slaves = map(lambda x: x.identifier, slaves)
+        self.log.debug("CUSTOMIZE_FOR_PROV SLAVES='%s'" % (slaves))
+
         if parameters and ('callbacks' in parameters):
             # This ensures we have workers in place before any potential state changes
             self._init_callback_workers(self.provider_image, parameters['callbacks'], self._provider_image_cbws)
