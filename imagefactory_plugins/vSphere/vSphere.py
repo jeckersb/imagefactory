@@ -131,31 +131,37 @@ class vSphere(object):
         # Add the cloud-info file
         self.modify_oz_filesystem()
 
+        image_names = [self.image] + \
+            map(lambda uuid: builder.pim.image_with_id(uuid).data,
+                builder.target_image.slaves)
+
+        self.log.debug("image_names = '%s'" % (str(image_names)))
         self.log.info("Transforming image for use on VMWare")
-        self.vmware_transform_image()
+        map(self.vmware_transform_image, image_names)
 
 
-        self.log.debug("@@@@WILL %s" % template)
+#        self.log.debug("WILL DO OVF, template is %s" % template)
         ovf = OVF()
-        ovf.add_image(self.image, [self.image])
+        map(lambda _x: ovf.add_image(_x, [_x]), image_names)
+
         ovf.tpl_uuid = image_id
-        ovf.ovf_desc = 'this file will self destroy the universe'
+        ovf.ovf_desc = ''
         ovf.vol_uuid = ''
-        ovf.ovf_name = 'lold'
-        ovf.save_as("/tmp/kokot.ovf")
+        ovf.ovf_name = ''
+        ovf.save_as("/tmp/output.ovf")
 
         self.percent_complete=100
         self.status="COMPLETED"
 
-    def vmware_transform_image(self):
+    def vmware_transform_image(self, image):
         # On entry the image points to our generic KVM raw image
         # Convert to stream-optimized VMDK and then update the image property
-        target_image = self.image + ".tmp.vmdk"
-        self.log.debug("Converting raw kvm image (%s) to vmware stream-optimized image (%s)" % (self.image, target_image))
-        convert_to_stream(self.image, target_image)
+        target_image = image + ".tmp.vmdk"
+        self.log.debug("Converting raw kvm image (%s) to vmware stream-optimized image (%s)" % (image, target_image))
+        convert_to_stream(image, target_image)
         self.log.debug("VMWare stream conversion complete")
-        os.unlink(self.image)
-        os.rename(self.image + ".tmp.vmdk", self.image)
+        os.unlink(image)
+        os.rename(image + ".tmp.vmdk", image)
 
     def modify_oz_filesystem(self):
         self.log.debug("Doing further Factory specific modification of Oz image")
