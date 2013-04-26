@@ -137,15 +137,15 @@ class OVF(object):
     disks = []
     for img in self.images:
       etdisk = ElementTree.Element('Disk')
-      etdisk.set('ovf:diskId', str(img))
+      etdisk.set('ovf:diskId', str(os.path.basename(img)))
       vol_size_str = ''#str((self.vol_size + (1024*1024*1024) - 1) / (1024*1024*1024))
-      etdisk.set('ovf:size', reduce(add, self.sizes[img]))
+      etdisk.set('ovf:size', str(reduce(add, self.sizes[img])))
       etdisk.set('ovf:vm_snapshot_id', '00000000-0000-0000-0000-000000000000')
-      etdisk.set('ovf:actual_size', reduce(add, self.real_sizes[img]))
+      etdisk.set('ovf:actual_size', str(reduce(add, self.real_sizes[img])))
       etdisk.set('ovf:format', 'http://www.vmware.com/specifications/vmdk.html#sparse')
       etdisk.set('ovf:parentRef', '')
       # XXX ovf:vm_snapshot_id
-      etdisk.set('ovf:fileRef', str(img))
+      etdisk.set('ovf:fileRef', str(os.path.basename(img)))
       # XXX ovf:format ("usually url to the specification")
       etdisk.set('ovf:volume-type', "Sparse")
       etdisk.set('ovf:volume-format', "COW")
@@ -165,12 +165,14 @@ class OVF(object):
     return disks
 
   def _gen_file_elems(self):
+    # we don't have complete support for multivolume disks yet
+    # so we use sizes[img][0] as a workaround now
     files = []
     for img in self.images:
       etfile = ElementTree.Element('File')
-      etfile.set('ovf:href', str(img)) #+'/'+str(self.vol_uuid))
-      etfile.set('ovf:id', str(img))
-      etfile.set('ovf:size', str(self.sizes[img]))
+      etfile.set('ovf:href', str(os.path.basename(img))) #+'/'+str(self.vol_uuid))
+      etfile.set('ovf:id', str(os.path.basename(img)))
+      etfile.set('ovf:size', str(self.sizes[img][0]))
       # TODO: Bulk this up a bit
 #      etfile.set('ovf:description', self.ovf_name)
       files.append(etfile)
@@ -343,61 +345,96 @@ class OVF(object):
 
     etsec.append(etitem)
 
+#    etitem = ElementTree.Element('Item')
+#
+#    ete = ElementTree.Element('rasd:Caption')
+#    ete.text = "Drive 1"
+#    etitem.append(ete)
+#
+#    ete = ElementTree.Element('rasd:InstanceId')
+#    ete.text = str(self.vol_uuid)
+#    etitem.append(ete)
+#
+#    ete = ElementTree.Element('rasd:ResourceType')
+#    ete.text = "17"
+#    etitem.append(ete)
+#
+#    ete = ElementTree.Element('rasd:HostResource')
+#    ete.text = str(self.img_uuid)+'/'+str(self.vol_uuid)
+#    etitem.append(ete)
+#
+#    ete = ElementTree.Element('rasd:Parent')
+#    ete.text = "00000000-0000-0000-0000-000000000000"
+#    etitem.append(ete)
+#
+#    ete = ElementTree.Element('rasd:Template')
+#    ete.text = "00000000-0000-0000-0000-000000000000"
+#    etitem.append(ete)
+#
+#    ete = ElementTree.Element('rasd:ApplicationList')
+#    # List of installed applications, separated by comma
+#    etitem.append(ete)
+#
+#    # This corresponds to ID of volgroup in host where snapshot was taken.
+#    # Obviously we have nothing like it.
+#    ete = ElementTree.Element('rasd:StorageId')
+#    # "Storage Domain Id"
+#    ete.text = "00000000-0000-0000-0000-000000000000"
+#    etitem.append(ete)
+#
+#    ete = ElementTree.Element('rasd:StoragePoolId')
+#    ete.text = self.pool_id
+#    etitem.append(ete)
+#
+#    ete = ElementTree.Element('rasd:CreationDate')
+#    ete.text = time.strftime("%Y/%m/%d %H:%M:%S", self.create_time)
+#    etitem.append(ete)
+#
+#    ete = ElementTree.Element('rasd:LastModified')
+#    ete.text = time.strftime("%Y/%m/%d %H:%M:%S", self.create_time)
+#    etitem.append(ete)
+#
+#    etsec.append(etitem)
+
+    disk_idx = 0
+    for img in self.images:
+      etitem = ElementTree.Element('Item')
+      ete = ElementTree.Element('rasd:AddressOnParent')
+      ete.text = str(disk_idx)
+      etitem.append(ete)
+
+      
+      ete = ElementTree.Element('rasd:ElementName')
+      ete.text = 'Harddisk' + ""
+      ete.set('xmlns:rasd', "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData")
+      etitem.append(ete)
+
+      
+      ete = ElementTree.Element('rasd:HostResource')
+      ete.text = 'ovf:'+os.path.basename(img)
+      etitem.append(ete)
+
+      ete = ElementTree.Element('rasd:InstanceID')
+      ete.text = str(6+disk_idx)  #TODO: 6 is magical constant, rewrite IDs
+                                  #      using generator
+      ete.set('xmlns:rasd', "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData")
+      etitem.append(ete)
+  
+#      ete = ElementTree.Element('rasd:Parent')
+#      ete.text = '4'
+#      etitem.append(ete)
+
+      ete = ElementTree.Element('rasd:ResourceType')
+      ete.text = '17'
+      etitem.append(ete)
+      etsec.append(etitem)
+      disk_idx += 1
+
+
     etitem = ElementTree.Element('Item')
 
     ete = ElementTree.Element('rasd:Caption')
-    ete.text = "Drive 1"
-    etitem.append(ete)
-
-    ete = ElementTree.Element('rasd:InstanceId')
-    ete.text = str(self.vol_uuid)
-    etitem.append(ete)
-
-    ete = ElementTree.Element('rasd:ResourceType')
-    ete.text = "17"
-    etitem.append(ete)
-
-    ete = ElementTree.Element('rasd:HostResource')
-    ete.text = str(self.img_uuid)+'/'+str(self.vol_uuid)
-    etitem.append(ete)
-
-    ete = ElementTree.Element('rasd:Parent')
-    ete.text = "00000000-0000-0000-0000-000000000000"
-    etitem.append(ete)
-
-    ete = ElementTree.Element('rasd:Template')
-    ete.text = "00000000-0000-0000-0000-000000000000"
-    etitem.append(ete)
-
-    ete = ElementTree.Element('rasd:ApplicationList')
-    # List of installed applications, separated by comma
-    etitem.append(ete)
-
-    # This corresponds to ID of volgroup in host where snapshot was taken.
-    # Obviously we have nothing like it.
-    ete = ElementTree.Element('rasd:StorageId')
-    # "Storage Domain Id"
-    ete.text = "00000000-0000-0000-0000-000000000000"
-    etitem.append(ete)
-
-    ete = ElementTree.Element('rasd:StoragePoolId')
-    ete.text = self.pool_id
-    etitem.append(ete)
-
-    ete = ElementTree.Element('rasd:CreationDate')
-    ete.text = time.strftime("%Y/%m/%d %H:%M:%S", self.create_time)
-    etitem.append(ete)
-
-    ete = ElementTree.Element('rasd:LastModified')
-    ete.text = time.strftime("%Y/%m/%d %H:%M:%S", self.create_time)
-    etitem.append(ete)
-
-    etsec.append(etitem)
-
-    etitem = ElementTree.Element('Item')
-
-    ete = ElementTree.Element('rasd:Caption')
-    ete.text = "Ethernet 0 rhevm"
+    ete.text = "Ethernet 0"
     etitem.append(ete)
 
     ete = ElementTree.Element('rasd:InstanceId')
