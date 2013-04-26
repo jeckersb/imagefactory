@@ -21,7 +21,8 @@ from Notification import Notification
 from NotificationCenter import NotificationCenter
 
 
-METADATA =  ( 'identifier', 'data', 'template', 'icicle', 'status_detail', 'status', 'percent_complete', 'parameters' )
+#METADATA =  ( 'identifier', 'data', 'template', 'icicle', 'status_detail', 'status', 'percent_complete', 'parameters' )
+METADATA =  ( 'identifier', 'data', 'template', 'icicle', 'status_detail', 'status', 'percent_complete', 'parameters', 'slaves')
 STATUS_STRINGS = ('NEW','PENDING', 'BUILDING', 'COMPLETE', 'FAILED', 'DELETING', 'DELETED', 'DELETEFAILED')
 NOTIFICATIONS = ('image.status', 'image.percentage')
 
@@ -36,6 +37,7 @@ class PersistentImage(object):
     template = prop("_template")
     icicle = prop("_icicle")
     status_detail = prop("_status_detail")
+    slaves = prop("_slaves")
 
     def status():
         doc = "A string value."
@@ -80,6 +82,9 @@ class PersistentImage(object):
     percent_complete = property(**percent_complete())
 ##### End PROPERTIES
 
+    def add_slave(self, slave_image):
+        self.slaves.append(slave_image.identifier)
+
     def __init__(self, image_id=None):
         self.log = logging.getLogger('%s.%s' % (__name__, self.__class__.__name__))
         self.notification_center = NotificationCenter()
@@ -98,6 +103,7 @@ class PersistentImage(object):
         self._percent_complete = 0
         self.icicle = None
         self.parameters = { }
+        self.slaves = []
 
     def metadata(self):
         self.log.debug("Executing metadata in class (%s) my metadata is (%s)" % (self.__class__, METADATA))
