@@ -848,7 +848,7 @@ class OVFPackage(object):
 
 
 class RHEVOVFPackage(OVFPackage):
-    def __init__(self, disk, path=None, ovf_name=None, ovf_desc=None):
+    def __init__(self, disk, path=None, ovf_name=None, ovf_desc=None, base_image=None):
         disk = RHEVDisk(disk)
         super(RHEVOVFPackage, self).__init__(disk, path)
         # We need these three unique identifiers when generating XML and the meta file
@@ -893,8 +893,8 @@ class RHEVOVFPackage(OVFPackage):
 
 
 class VsphereOVFPackage(OVFPackage):
-    def __init__(self, disk, path=None):
-        disk = VsphereDisk(disk)
+    def __init__(self, disk, base_image, path=None):
+        disk = VsphereDisk(disk, base_image)
         super(VsphereOVFPackage, self).__init__(disk, path)
         self.disk_path = os.path.join(self.path, "disk.img")
         self.ovf_path  = os.path.join(self.path, "desc.ovf")
@@ -993,11 +993,12 @@ class RHEVDisk(object):
             return None
 
 class VsphereDisk(object):
-    def __init__(self, path):
+    def __init__(self, path, base_image):
         self.path = path
+        self.base_image = base_image
         self.id = os.path.basename(self.path).split('.')[0]
 
-        self.vol_size = os.stat(self.path).st_size
+        self.vol_size = os.stat(self.base_image).st_size
         self.sparse_size = os.stat(self.path).st_blocks*512
 
         # self.raw_create_time = os.path.getctime(self.path)
