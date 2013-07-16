@@ -67,7 +67,7 @@ class OVA(object):
         else:
             raise ImageFactoryException("OVA plugin only support rhevm and vsphere images")
 
-        pkg = klass(disk=self.image.data)
+        pkg = klass(disk=self.image.data, base_image=self.base_image.data)
         ova = pkg.make_ova_package()
         copyfile_sparse(ova, self.image.data)
         pkg.delete()
