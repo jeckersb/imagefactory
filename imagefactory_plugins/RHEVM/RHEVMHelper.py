@@ -14,7 +14,7 @@ from ovirtsdk.xml import params
 from xml.etree import ElementTree
 from time import sleep
 from threading import BoundedSemaphore
-from imagefactory.OFVUtils import RHEVOVFPackage
+from imgfac.OVFUtils import RHEVOVFPackage
 
 # Large portions derived from dc-rhev-img from iwhd written by
 # Pete Zaitcev <zaitcev@redhat.com>
