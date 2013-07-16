@@ -21,7 +21,7 @@ import inspect
 from imgfac.CloudDelegate import CloudDelegate
 from imgfac.PersistentImageManager import PersistentImageManager
 from imgfac.TargetImage import TargetImage
-from imgfac.OVFUtils import RHEVOVFPackage
+from imgfac.OVFUtils import RHEVOVFPackage, VsphereOVFPackage
 from oz.ozutil import copyfile_sparse
 
 class OVA(object):
@@ -61,6 +61,8 @@ class OVA(object):
     def generate_ova(self):
         if self.target_image.target == 'rhevm':
             klass = RHEVOVFPackage
+        elif self.target_image.target == 'vsphere':
+            klass = VsphereOVFPackage
         else:
             raise ImageFactoryException("OVA plugin only support rhevm images")
 
