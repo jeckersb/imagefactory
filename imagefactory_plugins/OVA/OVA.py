@@ -64,7 +64,7 @@ class OVA(object):
         elif self.target_image.target == 'vsphere':
             klass = VsphereOVFPackage
         else:
-            raise ImageFactoryException("OVA plugin only support rhevm images")
+            raise ImageFactoryException("OVA plugin only support rhevm and vsphere images")
 
         pkg = klass(disk=self.image.data)
         ova = pkg.make_ova_package()
